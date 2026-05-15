@@ -62,11 +62,26 @@ def evaluate_autoencoder(
     scores = np.concatenate(all_scores)
     labels = np.concatenate(all_labels)
 
-    plot_anomaly_scores(scores, labels, figures_dir / "anomaly_scores.png")
+    has_bg = np.any(labels == 0)
+    has_sig = np.any(labels == 1)
+    labeled = bool(has_bg and has_sig)
+
+    plot_anomaly_scores(
+        scores,
+        labels if labeled else None,
+        figures_dir / "anomaly_scores.png",
+    )
     print(f"Anomaly score plot saved to {figures_dir / 'anomaly_scores.png'}")
 
-    auc_val = plot_roc_curve(labels, scores, figures_dir / "roc_curve.png")
-    print(f"ROC curve saved. AUC = {auc_val:.4f}")
+    if labeled:
+        auc_val = plot_roc_curve(labels, scores, figures_dir / "roc_curve.png")
+        print(f"ROC curve saved. AUC = {auc_val:.4f}")
+    else:
+        present = "background" if has_bg else "signal" if has_sig else "(none)"
+        print(
+            f"ROC skipped: dataset has only one class present ({present}). "
+            "Provide labeled bg+sig data to compute AUC."
+        )
 
     result = bump_hunt(scores)
     print(f"\nBump Hunt Results:")
@@ -101,11 +116,26 @@ def evaluate_classifier(
     probs = np.concatenate(all_probs)
     labels = np.concatenate(all_labels)
 
-    auc_val = plot_roc_curve(labels, probs, figures_dir / "roc_curve.png")
-    print(f"ROC curve saved. AUC = {auc_val:.4f}")
+    has_bg = np.any(labels == 0)
+    has_sig = np.any(labels == 1)
+    labeled = bool(has_bg and has_sig)
 
-    plot_anomaly_scores(probs, labels, figures_dir / "classifier_scores.png",
-                        title="Classifier Score Distribution")
+    if labeled:
+        auc_val = plot_roc_curve(labels, probs, figures_dir / "roc_curve.png")
+        print(f"ROC curve saved. AUC = {auc_val:.4f}")
+    else:
+        present = "background" if has_bg else "signal" if has_sig else "(none)"
+        print(
+            f"ROC skipped: dataset has only one class present ({present}). "
+            "Provide labeled bg+sig data to compute AUC."
+        )
+
+    plot_anomaly_scores(
+        probs,
+        labels if labeled else None,
+        figures_dir / "classifier_scores.png",
+        title="Classifier Score Distribution",
+    )
     print(f"Score distribution saved to {figures_dir / 'classifier_scores.png'}")
 
 

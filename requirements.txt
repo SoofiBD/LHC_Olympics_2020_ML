@@ -6,14 +6,11 @@ pyyaml==6.0.3
 h5py==3.15.1
 hdf5plugin==6.0.0
 scikit-learn==1.8.0
-
 # Plotting
 matplotlib==3.10.8
 mplhep==1.1.2
-
 # ML (choose your flavor)
 torch==2.10.0
-
 # Optional (often tricky on Windows/macOS; install separately if needed)
 # pyjet
 # fastjet
