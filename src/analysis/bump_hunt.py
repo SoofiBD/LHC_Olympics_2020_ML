@@ -1,8 +1,8 @@
 """Bump-hunt analysis: background fitting and Z-score calculation.
 
-Implements a simple polynomial background fit to an invariant-mass
-distribution and computes a local significance (Z-score) for an excess
-in a specified signal window.
+Implements a standard HEP falling-spectrum background fit to an invariant-mass
+distribution with proper Poisson errors, and computes a local and global
+significance (Z-score) for an excess using a sliding signal window.
 """
 from __future__ import annotations
 
@@ -17,16 +17,21 @@ from scipy import optimize, stats
 @dataclass(frozen=True)
 class BumpHuntResult:
     """Container for bump-hunt output."""
-    z_score: float
-    p_value: float
+    z_score: float  # Local Z-score
+    p_value: float  # Local p-value
+    global_z_score: float # Estimated global Z-score
     signal_count: float
     background_estimate: float
     fit_params: Tuple[float, ...] = ()
 
 
-def _poly_background(x: np.ndarray, *params) -> np.ndarray:
-    """Evaluate a polynomial background model."""
-    return np.polyval(params, x)
+def _hep_background(x: np.ndarray, p0: float, p1: float, p2: float) -> np.ndarray:
+    """Evaluate a standard dijet background model.
+    f(x) = p0 * (1 - x/sqrt(s))^p1 * (x/sqrt(s))^p2
+    Here we scale x by 13000 (LHC center of mass energy approx)
+    """
+    xs = np.clip(x / 13000.0, 1e-5, 0.999)
+    return p0 * ((1 - xs) ** p1) * (xs ** p2)
 
 
 def bump_hunt(
@@ -34,7 +39,7 @@ def bump_hunt(
     *,
     mass_window: Optional[Tuple[float, float]] = None,
     num_bins: int = 50,
-    poly_degree: int = 4,
+    window_bins: int = 3,
 ) -> BumpHuntResult:
     """Run a bump-hunt on an invariant-mass distribution.
 
@@ -43,61 +48,86 @@ def bump_hunt(
     masses : np.ndarray
         1-D array of reconstructed invariant masses (GeV).
     mass_window : tuple[float, float] | None
-        ``(low, high)`` edges of the signal window in GeV.  If *None* the
-        window is centred on the bin with the largest excess over the smooth
-        background and spans ±1 bin.
+        ``(low, high)`` edges of the signal window in GeV. If *None*, the
+        script performs a sliding window scan to find the largest local excess.
     num_bins : int
         Number of histogram bins.
-    poly_degree : int
-        Degree of the polynomial used for background fitting.
+    window_bins : int
+        Number of bins for the sliding window if mass_window is None (default 3).
 
     Returns
     -------
     BumpHuntResult
-        Z-score, p-value, observed signal count, and background estimate.
+        Z-score (local), p-value (local), global Z-score, observed signal count, and background estimate.
     """
     masses = np.asarray(masses, dtype=np.float64)
     if len(masses) < 10:
         warnings.warn("Too few events for meaningful bump-hunt.", stacklevel=2)
         return BumpHuntResult(
-            z_score=0.0, p_value=1.0, signal_count=0.0, background_estimate=0.0
+            z_score=0.0, p_value=1.0, global_z_score=0.0, signal_count=0.0, background_estimate=0.0
         )
 
     counts, bin_edges = np.histogram(masses, bins=num_bins)
     bin_centres = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-    bin_width = bin_edges[1] - bin_edges[0]
+    
+    # Proper Poisson uncertainties for the fit
+    sigma = np.sqrt(counts)
+    sigma[counts == 0] = 1.0  # Prevent division by zero
 
     # Exclude signal window from the fit if specified
     if mass_window is not None:
         lo, hi = mass_window
         mask = (bin_centres < lo) | (bin_centres > hi)
     else:
+        # If no window is specified, we fit the whole spectrum first to identify anomalies.
+        # Ideally, we should iteratively mask out regions, but for simplicity we fit all.
         mask = np.ones(len(bin_centres), dtype=bool)
 
+    # Initial guess for curve_fit
+    p0_guess = [np.sum(counts), 5.0, -5.0]
+    
     try:
-        fit_params = np.polyfit(
-            bin_centres[mask], counts[mask].astype(float), deg=poly_degree
+        fit_params, _ = optimize.curve_fit(
+            _hep_background,
+            bin_centres[mask],
+            counts[mask].astype(float),
+            p0=p0_guess,
+            sigma=sigma[mask],
+            absolute_sigma=True,
+            maxfev=10000
         )
-    except (np.linalg.LinAlgError, ValueError):
-        warnings.warn("Polynomial fit failed; returning null result.", stacklevel=2)
+    except (RuntimeError, optimize.OptimizeWarning):
+        warnings.warn("Background fit failed; returning null result.", stacklevel=2)
         return BumpHuntResult(
-            z_score=0.0, p_value=1.0, signal_count=0.0, background_estimate=0.0
+            z_score=0.0, p_value=1.0, global_z_score=0.0, signal_count=0.0, background_estimate=0.0
         )
 
-    bg_estimate_all = _poly_background(bin_centres, *fit_params)
-    bg_estimate_all = np.maximum(bg_estimate_all, 0.0)  # prevent negative bg
+    bg_estimate_all = _hep_background(bin_centres, *fit_params)
+    bg_estimate_all = np.maximum(bg_estimate_all, 1e-3)  # strictly positive bg
 
+    # Calculate significance
     if mass_window is not None:
         lo, hi = mass_window
         win = (bin_centres >= lo) & (bin_centres <= hi)
+        trials = 1
     else:
-        # Auto-detect: largest excess bin ± 1
-        excess = counts - bg_estimate_all
-        peak_bin = int(np.argmax(excess))
-        lo_idx = max(peak_bin - 1, 0)
-        hi_idx = min(peak_bin + 1, len(bin_centres) - 1)
-        win = np.zeros(len(bin_centres), dtype=bool)
-        win[lo_idx : hi_idx + 1] = True
+        # Sliding window scan
+        best_z = -np.inf
+        best_win = None
+        for i in range(len(bin_centres) - window_bins + 1):
+            win_idx = np.zeros(len(bin_centres), dtype=bool)
+            win_idx[i : i + window_bins] = True
+            
+            n_o = counts[win_idx].sum()
+            n_b = bg_estimate_all[win_idx].sum()
+            val = (n_o - n_b) / np.sqrt(n_b) if n_b > 0 else 0
+            
+            if val > best_z:
+                best_z = val
+                best_win = win_idx
+                
+        win = best_win
+        trials = (len(bin_centres) - window_bins + 1) / window_bins
 
     n_obs = float(counts[win].sum())
     n_bg = float(bg_estimate_all[win].sum())
@@ -106,14 +136,18 @@ def bump_hunt(
         z_score = 0.0
         p_value = 1.0
     else:
-        # Li-Ma-like approximation:  Z ≈ (n_obs - n_bg) / sqrt(n_bg)
+        # Local limit Z ≈ (N_obs - N_bg) / sqrt(N_bg)
         z_score = (n_obs - n_bg) / np.sqrt(n_bg)
-        # Two-sided p-value from Gaussian
-        p_value = float(stats.norm.sf(abs(z_score)) * 2)
+        p_value = float(stats.norm.sf(abs(z_score)))
+
+    # Global significance approximation (Look-Elsewhere Effect)
+    global_p = min(1.0, trials * p_value)
+    global_z = float(stats.norm.isf(global_p))
 
     return BumpHuntResult(
         z_score=round(z_score, 4),
         p_value=round(p_value, 6),
+        global_z_score=round(global_z, 4) if np.isfinite(global_z) else 0.0,
         signal_count=round(n_obs, 1),
         background_estimate=round(n_bg, 1),
         fit_params=tuple(float(p) for p in fit_params),
