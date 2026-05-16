@@ -22,6 +22,20 @@ from src.analysis.plotting import (
 from src.analysis.bump_hunt import bump_hunt
 
 
+def _sanitize_token(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in value)
+
+
+def _model_short_name(model_type: str) -> str:
+    mapping = {
+        "autoencoder": "AE",
+        "classifier": "CLF",
+        "part_autoencoder": "parT_AE",
+        "part_classifier": "parT_CLF",
+    }
+    return mapping.get(model_type.lower(), model_type)
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate a trained model.")
     p.add_argument("--checkpoint", type=Path, required=True,
@@ -34,7 +48,9 @@ def parse_args() -> argparse.Namespace:
                     help="Output directory for figures and results")
     p.add_argument("--device", type=str, default="cpu")
     p.add_argument("--model-type", type=str, default=None,
-                    choices=["autoencoder", "classifier"])
+                    choices=["autoencoder", "classifier", "part_autoencoder", "part_classifier"])
+    p.add_argument("--tag", type=str, default=None,
+                    help="Optional tag appended to output figure filenames")
     return p.parse_args()
 
 
@@ -43,6 +59,7 @@ def evaluate_autoencoder(
     dataloader,
     device: torch.device,
     figures_dir: Path,
+    eval_tag: str,
 ) -> None:
     """Evaluate an autoencoder by computing reconstruction loss as anomaly score."""
     model.eval()
@@ -69,12 +86,12 @@ def evaluate_autoencoder(
     plot_anomaly_scores(
         scores,
         labels if labeled else None,
-        figures_dir / "anomaly_scores.png",
+        figures_dir / f"anomaly_scores_{eval_tag}.png",
     )
-    print(f"Anomaly score plot saved to {figures_dir / 'anomaly_scores.png'}")
+    print(f"Anomaly score plot saved to {figures_dir / f'anomaly_scores_{eval_tag}.png'}")
 
     if labeled:
-        auc_val = plot_roc_curve(labels, scores, figures_dir / "roc_curve.png")
+        auc_val = plot_roc_curve(labels, scores, figures_dir / f"roc_curve_{eval_tag}.png")
         print(f"ROC curve saved. AUC = {auc_val:.4f}")
     else:
         present = "background" if has_bg else "signal" if has_sig else "(none)"
@@ -96,6 +113,7 @@ def evaluate_classifier(
     dataloader,
     device: torch.device,
     figures_dir: Path,
+    eval_tag: str,
 ) -> None:
     """Evaluate a classifier by computing ROC/AUC."""
     model.eval()
@@ -121,7 +139,7 @@ def evaluate_classifier(
     labeled = bool(has_bg and has_sig)
 
     if labeled:
-        auc_val = plot_roc_curve(labels, probs, figures_dir / "roc_curve.png")
+        auc_val = plot_roc_curve(labels, probs, figures_dir / f"roc_curve_{eval_tag}.png")
         print(f"ROC curve saved. AUC = {auc_val:.4f}")
     else:
         present = "background" if has_bg else "signal" if has_sig else "(none)"
@@ -133,10 +151,10 @@ def evaluate_classifier(
     plot_anomaly_scores(
         probs,
         labels if labeled else None,
-        figures_dir / "classifier_scores.png",
+        figures_dir / f"classifier_scores_{eval_tag}.png",
         title="Classifier Score Distribution",
     )
-    print(f"Score distribution saved to {figures_dir / 'classifier_scores.png'}")
+    print(f"Score distribution saved to {figures_dir / f'classifier_scores_{eval_tag}.png'}")
 
 
 def main() -> None:
@@ -177,10 +195,15 @@ def main() -> None:
     figures_dir = args.output / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
+    data_tag = args.data.stem if args.data is not None else "synthetic"
+    checkpoint_tag = args.checkpoint.stem
+    default_tag = f"{_model_short_name(model_type)}_{data_tag}_{checkpoint_tag}"
+    eval_tag = _sanitize_token(args.tag or default_tag)
+
     if model_type == "autoencoder":
-        evaluate_autoencoder(model, eval_loader, device, figures_dir)
+        evaluate_autoencoder(model, eval_loader, device, figures_dir, eval_tag)
     else:
-        evaluate_classifier(model, eval_loader, device, figures_dir)
+        evaluate_classifier(model, eval_loader, device, figures_dir, eval_tag)
 
     print("\nEvaluation complete.")
 

@@ -26,6 +26,20 @@ class TrainConfig:
     model_type: str = "autoencoder"  # "autoencoder" | "classifier" | "part_autoencoder" | "part_classifier"
 
 
+def _artifact_name(base_name: str, prefix: Optional[str] = None) -> str:
+    """Build artifact filenames with optional run prefix.
+
+    Examples
+    --------
+    - base_name='best_model.pt' -> 'best_model.pt'
+    - base_name='best_model.pt', prefix='partAE_ep20' -> 'best_model_partAE_ep20.pt'
+    """
+    if not prefix:
+        return base_name
+    stem, suffix = base_name.rsplit(".", 1)
+    return f"{stem}_{prefix}.{suffix}"
+
+
 
 def _save_loss_log(
     log: List[Dict[str, float]], path: Path
@@ -78,6 +92,7 @@ def train(
     val_loader: DataLoader,
     config: TrainConfig,
     output_dir: Path,
+    artifact_prefix: Optional[str] = None,
 ) -> Tuple[nn.Module, List[Dict[str, float]]]:
     """Full training loop with checkpointing and logging.
 
@@ -90,7 +105,9 @@ def train(
     config : TrainConfig
         Training hyper-parameters.
     output_dir : Path
-        Where to save ``best_model.pt`` and ``loss_log.csv``.
+        Where to save training artifacts.
+    artifact_prefix : str | None
+        Optional suffix injected into saved artifact names to avoid overwriting.
 
     Returns
     -------
@@ -100,6 +117,14 @@ def train(
         Per-epoch train/val losses.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    best_model_name = _artifact_name("best_model.pt", artifact_prefix)
+    final_model_name = _artifact_name("final_model.pt", artifact_prefix)
+    loss_log_name = _artifact_name("loss_log.csv", artifact_prefix)
+
+    best_model_path = output_dir / best_model_name
+    final_model_path = output_dir / final_model_name
+    loss_log_path = output_dir / loss_log_name
+
     device = torch.device(config.device)
     model = model.to(device)
 
@@ -155,15 +180,15 @@ def train(
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), output_dir / "best_model.pt")
+            torch.save(model.state_dict(), best_model_path)
 
-    torch.save(model.state_dict(), output_dir / "final_model.pt")
+    torch.save(model.state_dict(), final_model_path)
 
-    _save_loss_log(loss_log, output_dir / "loss_log.csv")
+    _save_loss_log(loss_log, loss_log_path)
 
-    model.load_state_dict(torch.load(output_dir / "best_model.pt", weights_only=True))
+    model.load_state_dict(torch.load(best_model_path, weights_only=True))
 
     print(f"\nTraining complete. Best val_loss: {best_val_loss:.6f}")
-    print(f"Checkpoint saved to {output_dir / 'best_model.pt'}")
+    print(f"Checkpoint saved to {best_model_path}")
 
     return model, loss_log
