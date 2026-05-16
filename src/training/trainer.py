@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from time import perf_counter
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -50,6 +51,14 @@ def _save_loss_log(
         writer = csv.DictWriter(f, fieldnames=["epoch", "train_loss", "val_loss"])
         writer.writeheader()
         writer.writerows(log)
+
+
+def _format_duration(seconds: float) -> str:
+    """Format a duration in HH:MM:SS."""
+    total_seconds = max(int(round(seconds)), 0)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
 
@@ -137,8 +146,10 @@ def train(
 
     best_val_loss = float("inf")
     loss_log: List[Dict[str, float]] = []
+    training_start = perf_counter()
 
     for epoch in range(1, config.epochs + 1):
+        epoch_start = perf_counter()
         model.train()
         running_loss = 0.0
         n_batches = 0
@@ -172,10 +183,20 @@ def train(
             {"epoch": epoch, "train_loss": avg_train_loss, "val_loss": avg_val_loss}
         )
 
+        epoch_elapsed = perf_counter() - epoch_start
+        total_elapsed = perf_counter() - training_start
+        completed_epochs = epoch
+        avg_epoch_time = total_elapsed / max(completed_epochs, 1)
+        remaining_epochs = max(config.epochs - epoch, 0)
+        eta_seconds = avg_epoch_time * remaining_epochs
+
         print(
             f"Epoch {epoch:>3d}/{config.epochs}  |  "
             f"train_loss: {avg_train_loss:.6f}  |  "
-            f"val_loss: {avg_val_loss:.6f}"
+            f"val_loss: {avg_val_loss:.6f}  |  "
+            f"epoch_time: {_format_duration(epoch_elapsed)}  |  "
+            f"elapsed: {_format_duration(total_elapsed)}  |  "
+            f"ETA: {_format_duration(eta_seconds)}"
         )
 
         if avg_val_loss < best_val_loss:
