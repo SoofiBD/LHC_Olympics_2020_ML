@@ -20,7 +20,7 @@ train:
   batch_size: 128
   lr: 0.001
   epochs: 20
-  device: cpu  # change to cuda if available
+  device: cuda #cpu    # change to cuda if available
 
 outputs:
   root: outputs

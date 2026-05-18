@@ -17,7 +17,7 @@ model:
   decoder_hidden_dim: 256
 
 train:
-  batch_size: 8
+  batch_size: 16 
   lr: 0.001
   epochs: 20
   device: cuda #cpu  # change to cuda if available
