@@ -23,7 +23,11 @@ Repository for anomaly detection on the LHC Olympics 2020 dataset using machine 
 
 ## Quickstart
 
-1. Put the official challenge HDF5 files in `data/raw/`.
+1. Download the dataset files into `data/raw/` (or use the automatic helper script):
+   ```bash
+   python scripts/download_data.py --dataset rnd        # R&D Dataset (~1.5GB)
+   python scripts/download_data.py --dataset background # Pythia Background Dataset
+   ```
 2. Create an environment and install deps:
    ```bash
    pip install -r requirements.txt
