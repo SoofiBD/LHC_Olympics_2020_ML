@@ -14,16 +14,34 @@ class LHCOPreprocessor(nn.Module):
 
     This module has no learnable parameters. It performs deterministic
     coordinate transformations and is used inside ParT wrapper models.
+    Supports pT sorting and particle sequence truncation to accelerate ParT training.
     """
 
-    def __init__(self, n_particles: int = 700, eps: float = 1e-8) -> None:
+    def __init__(
+        self,
+        n_particles: int = 700,
+        max_particles: int | None = None,
+        sort_by_pt: bool = True,
+        eps: float = 1e-8,
+    ) -> None:
         super().__init__()
         self.n_particles = n_particles
+        self.max_particles = max_particles if max_particles is not None else n_particles
+        self.sort_by_pt = sort_by_pt
         self.eps = eps
 
     def forward(self, x: torch.Tensor):
         batch_size = x.size(0)
         particles = x.view(batch_size, self.n_particles, 3)
+
+        if self.sort_by_pt:
+            pt = particles[:, :, 0]
+            order = torch.argsort(pt, dim=1, descending=True)
+            particles = torch.gather(particles, 1, order.unsqueeze(-1).expand(-1, -1, 3))
+
+        if self.max_particles < self.n_particles:
+            particles = particles[:, : self.max_particles, :]
+
         pt = particles[:, :, 0]
         eta = particles[:, :, 1]
         phi = particles[:, :, 2]

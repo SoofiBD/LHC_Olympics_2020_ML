@@ -20,12 +20,14 @@ class ParTClassifier(nn.Module):
         self,
         input_dim: int = 2100,
         n_particles: int = 700,
+        max_particles: int | None = 128,
         num_classes: int = 2,
         embed_dims: list[int] | None = None,
         pair_embed_dims: list[int] | None = None,
         num_heads: int = 8,
         num_layers: int = 8,
         num_cls_layers: int = 2,
+        use_amp: bool = True,
     ) -> None:
         super().__init__()
 
@@ -36,8 +38,13 @@ class ParTClassifier(nn.Module):
 
         self.input_dim = input_dim
         self.n_particles = n_particles
+        self.max_particles = max_particles if max_particles is not None else n_particles
 
-        self.preprocessor = LHCOPreprocessor(n_particles=n_particles)
+        self.preprocessor = LHCOPreprocessor(
+            n_particles=n_particles,
+            max_particles=self.max_particles,
+            sort_by_pt=True,
+        )
 
         self.model = ParticleTransformer(
             input_dim=3,
@@ -50,6 +57,7 @@ class ParTClassifier(nn.Module):
             num_cls_layers=num_cls_layers,
             fc_params=[],
             trim=True,
+            use_amp=use_amp,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

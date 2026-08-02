@@ -200,7 +200,7 @@ def main() -> None:
     default_tag = f"{_model_short_name(model_type)}_{data_tag}_{checkpoint_tag}"
     eval_tag = _sanitize_token(args.tag or default_tag)
 
-    if model_type == "autoencoder":
+    if model_type in ("autoencoder", "part_autoencoder"):
         evaluate_autoencoder(model, eval_loader, device, figures_dir, eval_tag)
     else:
         evaluate_classifier(model, eval_loader, device, figures_dir, eval_tag)

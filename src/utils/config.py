@@ -63,23 +63,27 @@ def get_model(config: Dict[str, Any]):
         return ParTAutoencoder(
             input_dim=input_dim,
             n_particles=model_cfg.get("n_particles", input_dim // 3),
+            max_particles=model_cfg.get("max_particles", 128),
             embed_dims=model_cfg.get("embed_dims", [128, 512, 128]),
             pair_embed_dims=model_cfg.get("pair_embed_dims", [64, 64, 64]),
             num_heads=model_cfg.get("num_heads", 8),
             num_layers=model_cfg.get("num_layers", 8),
             num_cls_layers=model_cfg.get("num_cls_layers", 2),
             decoder_hidden_dim=model_cfg.get("decoder_hidden_dim", 256),
+            use_amp=config.get("train", {}).get("use_amp", True),
         )
     elif model_type == "part_classifier":
         return ParTClassifier(
             input_dim=input_dim,
             n_particles=model_cfg.get("n_particles", input_dim // 3),
+            max_particles=model_cfg.get("max_particles", 128),
             num_classes=model_cfg.get("num_classes", 2),
             embed_dims=model_cfg.get("embed_dims", [128, 512, 128]),
             pair_embed_dims=model_cfg.get("pair_embed_dims", [64, 64, 64]),
             num_heads=model_cfg.get("num_heads", 8),
             num_layers=model_cfg.get("num_layers", 8),
             num_cls_layers=model_cfg.get("num_cls_layers", 2),
+            use_amp=config.get("train", {}).get("use_amp", True),
         )
     else:
         raise ValueError(
