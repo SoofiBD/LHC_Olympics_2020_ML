@@ -29,6 +29,10 @@ outputs/
 
 #Virtual Environment
 venv/
+.venv/
+
+# Scratch & Temp
+scratch/
 
 # tex junk 
 *.aux

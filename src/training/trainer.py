@@ -25,6 +25,7 @@ class TrainConfig:
     seed: int = 42
     device: str = "cpu"
     model_type: str = "autoencoder"  # "autoencoder" | "classifier" | "part_autoencoder" | "part_classifier"
+    use_amp: bool = True
 
 
 def _artifact_name(base_name: str, prefix: Optional[str] = None) -> str:
@@ -69,23 +70,26 @@ def validate(
     device: torch.device,
     *,
     model_type: str = "autoencoder",
+    use_amp: bool = True,
 ) -> float:
     """Run one validation pass and return the mean loss."""
     model.eval()
     total_loss = 0.0
     n_batches = 0
+    amp_enabled = use_amp and device.type == "cuda"
 
     with torch.no_grad():
         for batch in dataloader:
-            if model_type in ("autoencoder", "part_autoencoder"):
-                x = batch[0].to(device, non_blocking=True) if isinstance(batch, (list, tuple)) else batch.to(device, non_blocking=True)
-                x_hat, _ = model(x)
-                loss = criterion(x_hat, x)
-            else:  # classifier
-                x, y = batch
-                x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-                logits = model(x)
-                loss = criterion(logits, y)
+            with torch.amp.autocast("cuda", enabled=amp_enabled):
+                if model_type in ("autoencoder", "part_autoencoder"):
+                    x = batch[0].to(device, non_blocking=True) if isinstance(batch, (list, tuple)) else batch.to(device, non_blocking=True)
+                    x_hat, _ = model(x)
+                    loss = criterion(x_hat, x)
+                else:  # classifier
+                    x, y = batch
+                    x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+                    logits = model(x)
+                    loss = criterion(logits, y)
 
             total_loss += loss.item()
             n_batches += 1
@@ -143,6 +147,8 @@ def train(
         criterion = nn.CrossEntropyLoss()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+    amp_enabled = config.use_amp and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
 
     best_val_loss = float("inf")
     loss_log: List[Dict[str, float]] = []
@@ -157,18 +163,24 @@ def train(
         for batch in train_loader:
             optimizer.zero_grad()
 
-            if config.model_type in ("autoencoder", "part_autoencoder"):
-                x = batch[0].to(device, non_blocking=True) if isinstance(batch, (list, tuple)) else batch.to(device, non_blocking=True)
-                x_hat, _ = model(x)
-                loss = criterion(x_hat, x)
-            else:
-                x, y = batch
-                x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-                logits = model(x)
-                loss = criterion(logits, y)
+            with torch.amp.autocast("cuda", enabled=amp_enabled):
+                if config.model_type in ("autoencoder", "part_autoencoder"):
+                    x = batch[0].to(device, non_blocking=True) if isinstance(batch, (list, tuple)) else batch.to(device, non_blocking=True)
+                    x_hat, _ = model(x)
+                    loss = criterion(x_hat, x)
+                else:
+                    x, y = batch
+                    x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+                    logits = model(x)
+                    loss = criterion(logits, y)
 
-            loss.backward()
-            optimizer.step()
+            if amp_enabled:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
 
             running_loss += loss.item()
             n_batches += 1
@@ -176,7 +188,7 @@ def train(
         avg_train_loss = running_loss / max(n_batches, 1)
 
         avg_val_loss = validate(
-            model, val_loader, criterion, device, model_type=config.model_type
+            model, val_loader, criterion, device, model_type=config.model_type, use_amp=config.use_amp
         )
 
         loss_log.append(

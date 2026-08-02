@@ -119,8 +119,11 @@ def main() -> None:
         input_dim = model_cfg.get("input_dim", 128)
         dataset = SyntheticLHCDataset(n_samples=10_000, input_dim=input_dim)
 
+    num_workers = train_cfg.get("num_workers", 0)
+    use_amp = train_cfg.get("use_amp", True)
+
     train_loader, val_loader = build_dataloaders(
-        dataset, batch_size=batch_size, seed=seed
+        dataset, batch_size=batch_size, seed=seed, num_workers=num_workers, pin_memory=(device == "cuda")
     )
 
     cfg.setdefault("model", {})
@@ -137,6 +140,8 @@ def main() -> None:
             "lr": lr,
             "epochs": epochs,
             "device": device,
+            "num_workers": num_workers,
+            "use_amp": use_amp,
         }
     )
     effective_cfg["train"]["seed"] = seed
@@ -145,7 +150,7 @@ def main() -> None:
     effective_cfg["outputs"]["root"] = str(output_base)
 
     print(f"Model: {model.__class__.__name__}  |  input_dim={input_dim}")
-    print(f"Training: epochs={epochs}, batch_size={batch_size}, lr={lr}, device={device}")
+    print(f"Training: epochs={epochs}, batch_size={batch_size}, lr={lr}, device={device}, use_amp={use_amp}")
 
     tc = TrainConfig(
         batch_size=batch_size,
@@ -153,6 +158,7 @@ def main() -> None:
         epochs=epochs,
         device=device,
         model_type=model_type,
+        use_amp=use_amp,
     )
 
     trained_model, loss_log = train(

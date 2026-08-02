@@ -20,12 +20,14 @@ class ParTAutoencoder(nn.Module):
         self,
         input_dim: int = 2100,
         n_particles: int = 700,
+        max_particles: int | None = 128,
         embed_dims: list[int] | None = None,
         pair_embed_dims: list[int] | None = None,
         num_heads: int = 8,
         num_layers: int = 8,
         num_cls_layers: int = 2,
         decoder_hidden_dim: int = 256,
+        use_amp: bool = True,
     ) -> None:
         super().__init__()
 
@@ -36,9 +38,14 @@ class ParTAutoencoder(nn.Module):
 
         self.input_dim = input_dim
         self.n_particles = n_particles
+        self.max_particles = max_particles if max_particles is not None else n_particles
         latent_dim = embed_dims[-1]
 
-        self.preprocessor = LHCOPreprocessor(n_particles=n_particles)
+        self.preprocessor = LHCOPreprocessor(
+            n_particles=n_particles,
+            max_particles=self.max_particles,
+            sort_by_pt=True,
+        )
 
         self.encoder = ParticleTransformer(
             input_dim=3,
@@ -51,6 +58,7 @@ class ParTAutoencoder(nn.Module):
             num_cls_layers=num_cls_layers,
             fc_params=None,
             trim=True,
+            use_amp=use_amp,
         )
 
         self.decoder = nn.Sequential(

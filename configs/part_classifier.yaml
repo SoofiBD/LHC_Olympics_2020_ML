@@ -9,6 +9,7 @@ model:
   type: part_classifier
   input_dim: 2100
   n_particles: 700
+  max_particles: 128
   num_classes: 2
   embed_dims: [128, 512, 128]
   pair_embed_dims: [64, 64, 64]
@@ -20,7 +21,9 @@ train:
   batch_size: 128
   lr: 0.001
   epochs: 20
-  device: cuda #cpu    # change to cuda if available
+  device: cuda
+  num_workers: 0
+  use_amp: true
 
 outputs:
   root: outputs
