@@ -34,11 +34,27 @@ python scripts/download_data.py --dataset background
 
 *Not: İndirme işlemi yaklaşık 2.5 GB'tır. Tamamlandığında dosya `data/raw/events_LHCO2020_backgroundMC_Pythia.h5` yolunda olacaktır.*
 
-## Adım 3: Eğitim Komutu (Full Training Run)
+## Adım 3: Eğitim Komutları (Training Runs)
 
-RTX 4070 Ti, 12 GB VRAM'e sahip güçlü bir ekran kartıdır. Mac'te 24 GB Unified Memory olduğu için 128 batch size kullanabiliyorduk, ancak burada "CUDA Out of Memory" hatası almamak adına `batch-size` değerini 32 veya 64 olarak tutmamız güvenli olacaktır.
+RTX 4070 Ti, 12 GB VRAM ve 4. Nesil Tensor Çekirdeklerine sahiptir. Projemizde **AMP (Automatic Mixed Precision - FP16)** aktif olduğu için hem Batch Size 128 hem de Batch Size 64 desteklenir.
 
-Modelin tamamı GPU üzerinde (CUDA ile) çalışacak şekilde şu komutu çalıştırın:
+### Seçenek A: En Hızlı Seçenek — Batch Size 128 (~3.5 – 4 Saat) *(Önerilen)*
+Batch size 128, GPU çekirdeklerini en verimli şekilde kullanarak adım sayısını yarıya indirir ve toplam süreyi %25-30 kısaltır:
+
+```bash
+python scripts/train.py \
+  --config configs/part_autoencoder.yaml \
+  --data data/raw/events_LHCO2020_backgroundMC_Pythia.h5 \
+  --batch-size 128 \
+  --epochs 20 \
+  --run-name partAE_ep20_bs128_cuda \
+  --device cuda
+```
+
+---
+
+### Seçenek B: Güvenli Seçenek — Batch Size 64 (~4.5 – 5.5 Saat)
+Eğer sisteminizde arka planda çok fazla VRAM kullanan uygulama varsa veya 128'de `CUDA out of memory` hatası alırsanız:
 
 ```bash
 python scripts/train.py \
@@ -50,16 +66,56 @@ python scripts/train.py \
   --device cuda
 ```
 
-### Parametre Notları:
-- **`--batch-size 64`**: Eğer OOM (Out of Memory) hatası alırsanız bu değeri `32` veya `16`'ya düşürebilirsiniz. Sorunsuz başlarsa böyle bırakabilirsiniz.
-- **`--device cuda`**: Eğitimin ekran kartınızda (RTX 4070 Ti) çalışmasını sağlar.
-- **`--epochs 20`**: Verinin tamamen kaç kez üzerinden geçileceğini belirler. Daha hızlı sonuç görmek isterseniz `5` veya `10`'a çekebilirsiniz.
+---
 
-## Adım 4: Sonuçların Kontrolü
+### Seçenek C: Hızlı Ön Test — R&D Veri Seti (~30 – 40 Dakika)
+Tüm boru hattının (HDF5 okuma, GPU eğitimi, grafik ve ağırlık kaydetme) sorunsuz çalıştığını kısa sürede teyit etmek için 110 bin olaylık R&D veri setiyle hızlı eğitim:
+
+```bash
+# R&D verisini indirme (yaklaşık 250 MB):
+python scripts/download_data.py --dataset rnd
+
+# R&D üzerinde eğitim:
+python scripts/train.py \
+  --config configs/part_autoencoder.yaml \
+  --data data/raw/events_LHCO2020_RnD.h5 \
+  --batch-size 64 \
+  --epochs 20 \
+  --run-name partAE_rnd_quick \
+  --device cuda
+```
+
+---
+
+### Parametre Notları:
+- **`--batch-size 128 / 64`**: GPU VRAM'ine göre ayarlanır. Önce 128 ile başlayıp sorunsuzsa devam etmeniz önerilir.
+- **`--device cuda`**: Eğitimin RTX 4070 Ti ekran kartınızda çalışmasını sağlar.
+- **`--epochs 20`**: Verinin modelden kaç tur geçeceğidir. Daha hızlı sonuç görmek için 5 veya 10 yapılabilir.
+
+## Adım 4: Değerlendirme (Evaluation) Komutu
+
+Eğitilen `best_model` ağırlıklarını test verisi veya yarışma verisi (BlackBox1) üzerinde anomali tespiti için değerlendirmek:
+
+```bash
+# BlackBox1 verisini indirme:
+python scripts/download_data.py --dataset blackbox1
+
+# Modeli BlackBox1 üzerinde değerlendirme ve anomali skorlarını çıkarma:
+python scripts/evaluate.py \
+  --checkpoint outputs/models/best_model_partAE_ep20_bs128_cuda.pt \
+  --config configs/part_autoencoder.yaml \
+  --data data/raw/events_LHCO2020_BlackBox1.h5 \
+  --model-type part_autoencoder \
+  --tag partAE_eval_bb1 \
+  --device cuda
+```
+
+## Adım 5: Sonuçların Kontrolü
 
 Eğitim bittiğinde şu dosyalar otomatik oluşturulacaktır:
-- `outputs/models/best_model_partAE_ep20_bs64_cuda.pt`: En iyi doğruluk oranına sahip ağırlıklar.
-- `outputs/figures/loss_curves_partAE_ep20_bs64_cuda.png`: Eğitimin Loss grafiği.
-- `outputs/logs/`: Eğitimle alakalı JSON ve YAML metadataları.
+- `outputs/models/best_model_*.pt`: En düşük validation loss'a sahip en iyi ağırlıklar.
+- `outputs/figures/loss_curves_*.png`: Eğitimin Train/Val Loss eğrileri grafiği.
+- `outputs/logs/`: Eğitimle alakalı JSON ve CSV metadataları.
 
 Şimdiden kolay gelsin!
+
