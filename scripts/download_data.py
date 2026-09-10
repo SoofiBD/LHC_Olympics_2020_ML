@@ -10,17 +10,17 @@ from pathlib import Path
 DATASETS = {
     "rnd": {
         "filename": "events_LHCO2020_RnD.h5",
-        "url": "https://zenodo.org/records/3539073/files/events_LHCO2020_RnD.h5",
+        "url": "https://zenodo.org/records/4536624/files/events_LHCO2020_RnD.h5?download=1",
         "description": "R&D Dataset (110k events: 100k background + 10k signal)",
     },
     "background": {
         "filename": "events_LHCO2020_backgroundMC_Pythia.h5",
-        "url": "https://zenodo.org/records/3715873/files/events_LHCO2020_backgroundMC_Pythia.h5",
+        "url": "https://zenodo.org/records/4536624/files/events_LHCO2020_backgroundMC_Pythia.h5?download=1",
         "description": "Background MC Pythia Dataset (1M background events)",
     },
     "blackbox1": {
         "filename": "events_LHCO2020_BlackBox1.h5",
-        "url": "https://zenodo.org/records/3715502/files/events_LHCO2020_BlackBox1.h5",
+        "url": "https://zenodo.org/records/4536624/files/events_LHCO2020_BlackBox1.h5?download=1",
         "description": "Black Box 1 Dataset (Unlabeled challenge data)",
     },
 }
